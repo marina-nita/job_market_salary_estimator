@@ -1,0 +1,131 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Salary Estimator</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 700px; margin: 40px auto; }
+    label { display: block; margin-top: 12px; font-weight: 600; }
+    input, select { width: 100%; padding: 8px; margin-top: 6px; }
+    button { margin-top: 16px; padding: 10px 14px; cursor: pointer; }
+    #result { margin-top: 18px; padding: 12px; background: #f4f4f4; }
+    .hint { font-size: 12px; color: #666; margin-top: 4px; }
+  </style>
+</head>
+<body>
+  <h2>Job Salary Estimator</h2>
+
+  <form id="salaryForm">
+    <label>Job Title</label>
+    <input id="title" required placeholder="Senior Data Analyst" />
+
+    <label>Location (restriction)</label>
+    <select id="location" required></select>
+    <div class="hint">Companies list updates based on selected location.</div>
+
+    <label>Company</label>
+    <select id="company" required></select>
+
+    <label>Employment Type</label>
+    <select id="employment_type" required></select>
+
+    <label>Seniority</label>
+    <select id="seniority" required></select>
+
+    <button type="submit">Predict Salary</button>
+  </form>
+
+  <div id="result">Result will appear here.</div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    const form = document.getElementById("salaryForm");
+    const resultDiv = document.getElementById("result");
+
+    const titleEl = document.getElementById("title");
+    const companyEl = document.getElementById("company");
+    const locationEl = document.getElementById("location");
+    const employmentEl = document.getElementById("employment_type");
+    const seniorityEl = document.getElementById("seniority");
+
+    function fillSelect(selectEl, options) {
+      selectEl.innerHTML = "";
+      for (const opt of options) {
+        const o = document.createElement("option");
+        o.value = opt;
+        o.textContent = opt;
+        selectEl.appendChild(o);
+      }
+    }
+
+    async function loadMeta() {
+      const res = await fetch(`${API_BASE}/meta`);
+      const data = await res.json();
+      fillSelect(employmentEl, data.employment_types);
+      fillSelect(seniorityEl, data.seniorities);
+    }
+
+    async function loadLocations() {
+      const res = await fetch(`${API_BASE}/locations`);
+      const data = await res.json();
+      fillSelect(locationEl, data.locations);
+    }
+
+    async function loadCompaniesForLocation(location) {
+      const res = await fetch(`${API_BASE}/companies?location=${encodeURIComponent(location)}`);
+      const data = await res.json();
+      fillSelect(companyEl, data.companies);
+    }
+
+    locationEl.addEventListener("change", async (e) => {
+      await loadCompaniesForLocation(e.target.value);
+    });
+
+    // Initial load: meta -> locations -> companies(first location)
+    (async () => {
+      try {
+        await loadMeta();
+        await loadLocations();
+        const firstLoc = locationEl.value;
+        await loadCompaniesForLocation(firstLoc);
+      } catch (err) {
+        resultDiv.textContent = "Failed to load dropdown data. Check backend is running.";
+      }
+    })();
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      resultDiv.textContent = "Predicting...";
+
+      const payload = {
+        title: titleEl.value,
+        company: companyEl.value,
+        location_restrictions: locationEl.value,
+        employment_type: employmentEl.value,
+        seniority: seniorityEl.value,
+      };
+
+      try {
+        const res = await fetch(`${API_BASE}/predict`, {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) {
+          const txt = await res.text();
+          throw new Error(`API error ${res.status}: ${txt}`);
+        }
+
+        const data = await res.json();
+        const salary = Math.round(data.predicted_salary);
+
+        resultDiv.textContent = `Predicted salary: $${salary.toLocaleString()}`;
+      } catch (err) {
+        resultDiv.textContent = "Error calling API. Check backend is running and CORS is allowed.";
+      }
+    });
+  </script>
+</body>
+</html>
